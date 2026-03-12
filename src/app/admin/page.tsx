@@ -34,13 +34,13 @@ const menuItems = [
   { icon: Film, title: '影视管理', href: '/admin/movies', description: '管理影视内容' },
   { icon: Crown, title: '会员管理', href: '/admin/vip', description: '管理会员订阅' },
   { icon: Coins, title: '金币管理', href: '/admin/coins', description: '管理金币充值' },
+  { icon: Settings, title: '支付配置', href: '/admin/payment', description: '管理支付配置' },
   { icon: MessageCircle, title: '聊天管理', href: '/admin/chat', description: '管理聊天室' },
   { icon: Gamepad2, title: '游戏管理', href: '/admin/games', description: '管理游戏' },
   { icon: ImageIcon, title: '漫画管理', href: '/admin/comics', description: '管理漫画内容' },
   { icon: BookOpen, title: '小说管理', href: '/admin/novels', description: '管理小说内容' },
   { icon: Megaphone, title: '广告管理', href: '/admin/ads', description: '管理广告投放' },
   { icon: Palette, title: '主题配置', href: '/admin/themes', description: '配置网站主题' },
-  { icon: Settings, title: '系统设置', href: '/admin/settings', description: '系统配置' },
 ];
 
 const recentActivities = [

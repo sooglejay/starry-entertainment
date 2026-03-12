@@ -551,3 +551,179 @@ export const healthCheck = pgTable("health_check", {
 	id: serial().notNull().primaryKey(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow(),
 });
+
+// ==================== 加密货币支付系统 ====================
+
+// 支持的加密货币配置
+export const cryptoCurrencies = pgTable("crypto_currencies", {
+  id: serial().notNull().primaryKey(),
+  code: varchar("code", { length: 10 }).notNull().unique(), // USDT, BTC, ETH, TRX, etc.
+  name: varchar("name", { length: 50 }).notNull(), // Tether, Bitcoin, Ethereum, etc.
+  symbol: varchar("symbol", { length: 10 }).notNull(), // ₮, ₿, Ξ, etc.
+  network: varchar("network", { length: 20 }).notNull(), // ERC20, TRC20, BEP20, etc.
+  decimals: integer("decimals").default(18).notNull(),
+  icon: text("icon"), // 货币图标URL
+  usdRate: decimal("usd_rate", { precision: 20, scale: 8 }).default('1').notNull(), // 对美元汇率
+  minConfirmations: integer("min_confirmations").default(1).notNull(), // 最小确认数
+  minDeposit: decimal("min_deposit", { precision: 20, scale: 8 }), // 最小充值金额
+  minWithdraw: decimal("min_withdraw", { precision: 20, scale: 8 }), // 最小提现金额
+  withdrawFee: decimal("withdraw_fee", { precision: 20, scale: 8 }).default('0'), // 提现手续费
+  isActive: boolean("is_active").default(true).notNull(),
+  sortOrder: integer("sort_order").default(0),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow(),
+}, (table) => [
+  index("idx_crypto_currencies_code").on(table.code),
+  index("idx_crypto_currencies_is_active").on(table.isActive),
+]);
+
+// 系统加密货币钱包地址
+export const cryptoWallets = pgTable("crypto_wallets", {
+  id: serial().notNull().primaryKey(),
+  currencyId: integer("currency_id").notNull().references(() => cryptoCurrencies.id, { onDelete: 'cascade' }),
+  address: varchar("address", { length: 255 }).notNull(), // 钱包地址
+  tag: varchar("tag", { length: 50 }), // 标签/备注名
+  network: varchar("network", { length: 20 }).notNull(), // 网络类型
+  balance: decimal("balance", { precision: 30, scale: 8 }).default('0').notNull(), // 当前余额
+  totalReceived: decimal("total_received", { precision: 30, scale: 8 }).default('0').notNull(), // 总收入
+  totalSent: decimal("total_sent", { precision: 30, scale: 8 }).default('0').notNull(), // 总支出
+  isActive: boolean("is_active").default(true).notNull(),
+  lastSyncAt: timestamp("last_sync_at", { withTimezone: true, mode: 'string' }),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow(),
+}, (table) => [
+  index("idx_crypto_wallets_currency_id").on(table.currencyId),
+  index("idx_crypto_wallets_address").on(table.address),
+]);
+
+// 用户加密货币钱包地址
+export const userCryptoWallets = pgTable("user_crypto_wallets", {
+  id: serial().notNull().primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  currencyId: integer("currency_id").notNull().references(() => cryptoCurrencies.id, { onDelete: 'cascade' }),
+  address: varchar("address", { length: 255 }).notNull(), // 钱包地址
+  network: varchar("network", { length: 20 }).notNull(), // 网络类型
+  label: varchar("label", { length: 100 }), // 用户标签
+  isVerified: boolean("is_verified").default(false).notNull(), // 是否已验证
+  verificationTx: varchar("verification_tx", { length: 255 }), // 验证交易哈希
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow(),
+}, (table) => [
+  index("idx_user_crypto_wallets_user_id").on(table.userId),
+  index("idx_user_crypto_wallets_currency_id").on(table.currencyId),
+  index("idx_user_crypto_wallets_address").on(table.address),
+]);
+
+// 加密货币支付订单
+export const cryptoPayments = pgTable("crypto_payments", {
+  id: serial().notNull().primaryKey(),
+  orderNo: varchar("order_no", { length: 50 }).notNull().unique(), // 订单号
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  currencyId: integer("currency_id").notNull().references(() => cryptoCurrencies.id, { onDelete: 'cascade' }),
+  walletId: integer("wallet_id").notNull().references(() => cryptoWallets.id), // 收款钱包
+  type: varchar("type", { length: 20 }).notNull(), // recharge, vip, coin, product
+  amount: decimal("amount", { precision: 30, scale: 8 }).notNull(), // 加密货币金额
+  usdAmount: decimal("usd_amount", { precision: 20, scale: 2 }).notNull(), // 美元金额
+  coinAmount: integer("coin_amount").default(0), // 获得金币数量
+  vipDays: integer("vip_days").default(0), // VIP天数
+  rate: decimal("rate", { precision: 20, scale: 8 }).notNull(), // 下单时汇率
+  toAddress: varchar("to_address", { length: 255 }).notNull(), // 收款地址
+  fromAddress: varchar("from_address", { length: 255 }), // 付款地址
+  txHash: varchar("tx_hash", { length: 255 }), // 交易哈希
+  status: varchar("status", { length: 20 }).default('pending').notNull(), // pending, paid, confirmed, cancelled, expired
+  confirmations: integer("confirmations").default(0), // 确认数
+  paidAt: timestamp("paid_at", { withTimezone: true, mode: 'string' }), // 支付时间
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true, mode: 'string' }), // 确认时间
+  expiredAt: timestamp("expired_at", { withTimezone: true, mode: 'string' }), // 过期时间
+  metadata: jsonb("metadata").default({}), // 额外数据
+  createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow(),
+}, (table) => [
+  index("idx_crypto_payments_order_no").on(table.orderNo),
+  index("idx_crypto_payments_user_id").on(table.userId),
+  index("idx_crypto_payments_currency_id").on(table.currencyId),
+  index("idx_crypto_payments_status").on(table.status),
+  index("idx_crypto_payments_tx_hash").on(table.txHash),
+  index("idx_crypto_payments_created_at").on(table.createdAt),
+]);
+
+// 加密货币交易记录
+export const cryptoTransactions = pgTable("crypto_transactions", {
+  id: serial().notNull().primaryKey(),
+  txHash: varchar("tx_hash", { length: 255 }).notNull().unique(), // 交易哈希
+  currencyId: integer("currency_id").notNull().references(() => cryptoCurrencies.id, { onDelete: 'cascade' }),
+  walletId: integer("wallet_id").references(() => cryptoWallets.id), // 关联钱包
+  paymentId: integer("payment_id").references(() => cryptoPayments.id), // 关联订单
+  type: varchar("type", { length: 20 }).notNull(), // deposit, withdraw, internal
+  amount: decimal("amount", { precision: 30, scale: 8 }).notNull(), // 金额
+  fee: decimal("fee", { precision: 30, scale: 8 }).default('0'), // 手续费
+  fromAddress: varchar("from_address", { length: 255 }), // 发送地址
+  toAddress: varchar("to_address", { length: 255 }), // 接收地址
+  blockNumber: bigint("block_number", { mode: 'number' }), // 区块高度
+  confirmations: integer("confirmations").default(0), // 确认数
+  status: varchar("status", { length: 20 }).default('pending').notNull(), // pending, confirmed, failed
+  processedAt: timestamp("processed_at", { withTimezone: true, mode: 'string' }), // 处理时间
+  metadata: jsonb("metadata").default({}), // 额外数据
+  createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow(),
+}, (table) => [
+  index("idx_crypto_transactions_tx_hash").on(table.txHash),
+  index("idx_crypto_transactions_currency_id").on(table.currencyId),
+  index("idx_crypto_transactions_wallet_id").on(table.walletId),
+  index("idx_crypto_transactions_payment_id").on(table.paymentId),
+  index("idx_crypto_transactions_status").on(table.status),
+]);
+
+// 加密货币充值套餐
+export const cryptoRechargePackages = pgTable("crypto_recharge_packages", {
+  id: serial().notNull().primaryKey(),
+  name: varchar("name", { length: 100 }).notNull(),
+  coins: integer("coins").notNull(), // 金币数量
+  currencyId: integer("currency_id").notNull().references(() => cryptoCurrencies.id, { onDelete: 'cascade' }),
+  cryptoAmount: decimal("crypto_amount", { precision: 30, scale: 8 }).notNull(), // 加密货币金额
+  usdAmount: decimal("usd_amount", { precision: 20, scale: 2 }).notNull(), // 美元金额
+  bonus: integer("bonus").default(0), // 赠送金币
+  discount: decimal("discount", { precision: 5, scale: 2 }).default('0'), // 折扣百分比
+  description: text("description"),
+  isPopular: boolean("is_popular").default(false).notNull(),
+  sortOrder: integer("sort_order").default(0),
+  status: varchar("status", { length: 20 }).default('active').notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow(),
+}, (table) => [
+  index("idx_crypto_recharge_packages_currency_id").on(table.currencyId),
+  index("idx_crypto_recharge_packages_status").on(table.status),
+]);
+
+// VIP加密货币支付套餐
+export const cryptoVipPackages = pgTable("crypto_vip_packages", {
+  id: serial().notNull().primaryKey(),
+  name: varchar("name", { length: 100 }).notNull(),
+  duration: integer("duration").notNull(), // 天数
+  currencyId: integer("currency_id").notNull().references(() => cryptoCurrencies.id, { onDelete: 'cascade' }),
+  cryptoAmount: decimal("crypto_amount", { precision: 30, scale: 8 }).notNull(), // 加密货币金额
+  usdAmount: decimal("usd_amount", { precision: 20, scale: 2 }).notNull(), // 美元金额
+  originalUsdAmount: decimal("original_usd_amount", { precision: 20, scale: 2 }), // 原价美元金额
+  features: jsonb("features").default([]).notNull(), // 功能列表
+  discount: decimal("discount", { precision: 5, scale: 2 }).default('0'), // 折扣
+  isPopular: boolean("is_popular").default(false).notNull(),
+  sortOrder: integer("sort_order").default(0),
+  status: varchar("status", { length: 20 }).default('active').notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow(),
+}, (table) => [
+  index("idx_crypto_vip_packages_currency_id").on(table.currencyId),
+  index("idx_crypto_vip_packages_status").on(table.status),
+]);
+
+// 汇率历史记录
+export const cryptoRateHistory = pgTable("crypto_rate_history", {
+  id: serial().notNull().primaryKey(),
+  currencyId: integer("currency_id").notNull().references(() => cryptoCurrencies.id, { onDelete: 'cascade' }),
+  rate: decimal("rate", { precision: 20, scale: 8 }).notNull(), // 对美元汇率
+  source: varchar("source", { length: 50 }).notNull(), // 来源：binance, coinbase, coingecko, etc.
+  createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow(),
+}, (table) => [
+  index("idx_crypto_rate_history_currency_id").on(table.currencyId),
+  index("idx_crypto_rate_history_created_at").on(table.createdAt),
+]);
