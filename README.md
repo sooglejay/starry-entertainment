@@ -73,7 +73,7 @@ COZE_API_KEY=your_coze_api_key
 pnpm dev
 ```
 
-启动后访问 [http://localhost:5000](http://localhost:5000)
+启动后访问 [http://localhost:3000](http://localhost:3000)
 
 ### 构建生产版本
 
